@@ -17,20 +17,29 @@ package com.google.fhir.gateway;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.web.servlet.ServletComponentScan;
 
 /**
  * This class shows the minimum that is required to create a FHIR Gateway with all AccessChecker
  * plugins defined in "com.google.fhir.gateway.plugin".
+ *
+ * <p>DataSource auto-configuration is controlled by env {@code ENABLE_DATASOURCE}. When set to
+ * {@code true}, Spring Boot configures a DataSource from {@code SPRING_DATASOURCE_*} (e.g. for the
+ * location plugin with Postgres). When unset or not {@code true}, DataSource is excluded so no DB
+ * is required.
  */
-@SpringBootApplication(
-    scanBasePackages = {"com.google.fhir.gateway.plugin"},
-    exclude = {DataSourceAutoConfiguration.class})
+@SpringBootApplication(scanBasePackages = {"com.google.fhir.gateway.plugin"})
 @ServletComponentScan(basePackages = "com.google.fhir.gateway")
 public class MainApp {
 
+  private static final String ENABLE_DATASOURCE = "ENABLE_DATASOURCE";
+
   public static void main(String[] args) {
+    if (!"true".equalsIgnoreCase(System.getenv(ENABLE_DATASOURCE))) {
+      System.setProperty(
+          "spring.autoconfigure.exclude",
+          "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration");
+    }
     SpringApplication.run(MainApp.class, args);
   }
 }
