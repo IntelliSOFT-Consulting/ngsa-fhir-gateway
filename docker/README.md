@@ -1,11 +1,55 @@
 # Docker Compose YAMLs
 
-This directory contains two Docker Compose YAML files.
+This directory contains three Docker Compose YAML files.
 [hapi-proxy-compose.yaml](./hapi-proxy-compose.yaml) sets up the FHIR Proxy and
 a HAPI FHIR Server with synthetic data pre-loaded (more details below).
+[hapi-proxy-location-compose.yaml](./hapi-proxy-location-compose.yaml) adds a
+Postgres database and runs the proxy with the **location** access checker (see
+"Testing with the location access checker" below).
 [keycloak/config-compose.yaml](./keycloak/config-compose.yaml) sets up a test
 Keycloak instance that can support both a list based access control and a
 single-patient based SMART-on-FHIR app (in two separate realms).
+
+## Building the gateway image
+
+Build and tag the FHIR Gateway image from the repository root so Compose can use
+it (the image includes all plugins, including the location access checker):
+
+```sh
+docker build -t us-docker.pkg.dev/fhir-proxy-build/stable/fhir-gateway:latest .
+```
+
+To use a different tag, set `BUILD_ID` when running Compose (e.g.
+`BUILD_ID=my-tag docker compose -f docker/hapi-proxy-location-compose.yaml up -d`).
+
+## Testing with the location access checker
+
+Use [hapi-proxy-location-compose.yaml](./hapi-proxy-location-compose.yaml) to
+run the proxy with `ACCESS_CHECKER=location` and a Postgres database for the
+location plugin cache.
+
+1. Build the gateway image (see "Building the gateway image" above).
+2. Ensure `.env` (or the environment) provides `TOKEN_ISSUER`, `PROXY_TO`,
+   `BACKEND_TYPE`, `RUN_MODE` (see [.env](./.env)). Postgres defaults
+   (user/password `fhir_gateway`, database `fhir_gateway`) are set in the
+   compose file; override with `SPRING_DATASOURCE_USERNAME` and
+   `SPRING_DATASOURCE_PASSWORD` if needed.
+3. Start the stack (from the repo root):
+
+   ```sh
+   docker compose -f docker/hapi-proxy-location-compose.yaml up -d
+   ```
+
+   Start order is handled by Compose: Postgres starts first (and is health-checked),
+   then the proxy and HAPI server.
+
+For the location plugin to work end-to-end, the Identity Provider (e.g. Keycloak)
+must issue JWTs that include the practitioner claim (e.g. `sub` = Practitioner
+resource ID, as configured in
+[location-access-config.json](../plugins/src/main/resources/location/location-access-config.json)),
+and the FHIR server (HAPI) must have matching Practitioner and Location resources
+with the expected extensions. See the [plugins README](../plugins/README.md) and
+`location-access-config.json` for configuration details.
 
 ## Pre-loaded HAPI Server
 
