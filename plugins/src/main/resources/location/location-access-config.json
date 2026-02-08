@@ -1,1 +1,18 @@
-{"roleHierarchy":{"ADMINISTRATOR":"COUNTRY","COUNTRY_ADMINISTRATOR":"COUNTRY","PROGRAM_MANAGER":"COUNTRY","COUNTY_ADMINISTRATOR":"COUNTY","PEER_COACH":"COUNTY","SUBCOUNTY_DISEASE_SURVEILLANCE_OFFICER":"SUB-COUNTY","CHA":"COMMUNITY-UNIT"},"locationTagSystem":"http://example.org/fhir/StructureDefinition/encounter-managingLocation","practitionerClaimName":"sub","locationExtensionUrl":"http://example.org/location","roleExtensionUrl":"http://example.org/fhir/StructureDefinition/role-group","rootLocationTypeCode":"COUNTRY","leafLocationTypeCode":"COMMUNITY-UNIT","maxDescendantTagsInSearch":200}
+{
+    "roleHierarchy": {
+        "ADMINISTRATOR": "COUNTRY",
+        "COUNTRY_ADMINISTRATOR": "COUNTRY",
+        "PROGRAM_MANAGER": "COUNTRY",
+        "COUNTY_ADMINISTRATOR": "COUNTY",
+        "PEER_COACH": "COUNTY",
+        "SUBCOUNTY_DISEASE_SURVEILLANCE_OFFICER": "SUB-COUNTY",
+        "CHA": "COMMUNITY-UNIT"
+    },
+    "locationTagSystem": "http://example.org/fhir/StructureDefinition/encounter-managingLocation",
+    "practitionerClaimName": "sub",
+    "locationExtensionUrl": "http://example.org/location",
+    "roleExtensionUrl": "http://example.org/fhir/StructureDefinition/role-group",
+    "rootLocationTypeCode": "COUNTRY",
+    "leafLocationTypeCode": "COMMUNITY-UNIT",
+    "maxDescendantTagsInSearch": 200
+}
