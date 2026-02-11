@@ -1,5 +1,5 @@
 #
-# Copyright 2021-2025 Google LLC
+# Copyright 2021-2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ version: "3.0"
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_DB: fhir_gateway
       POSTGRES_USER: fhir_gateway
@@ -75,8 +75,3 @@ services:
       interval: 10s
       retries: 5
       timeout: 10s
-
-  hapi-server:
-    image: us-docker.pkg.dev/fhir-proxy-build/stable/hapi-synthea:small
-    ports:
-      - "8099:8080"
