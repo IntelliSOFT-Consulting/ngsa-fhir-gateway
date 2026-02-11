@@ -30,6 +30,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -144,7 +145,7 @@ public class LocationCachingService {
         ps.setString(1, id);
         ps.setString(2, partOfId);
         ps.setArray(3, c.createArrayOf("text", typeCodes.toArray(new String[0])));
-        ps.setObject(4, fetchedAt);
+        setInstant(ps, 4, fetchedAt);
         ps.executeUpdate();
       }
     } catch (SQLException e) {
@@ -258,7 +259,7 @@ public class LocationCachingService {
                     + "LIMIT ?")) {
       ps.setString(1, startLocationId);
       ps.setString(2, desiredTypeCode);
-      ps.setObject(3, cutoff);
+      setInstant(ps, 3, cutoff);
       ps.setInt(4, limit + 1);
       try (ResultSet rs = ps.executeQuery()) {
         while (rs.next()) {
@@ -374,7 +375,7 @@ public class LocationCachingService {
       ps.setString(1, practitionerId);
       ps.setString(2, ctx.role());
       ps.setString(3, ctx.primaryLocationId());
-      ps.setObject(4, now);
+      setInstant(ps, 4, now);
       ps.executeUpdate();
     } catch (SQLException e) {
       throw new IllegalStateException("Failed to write practitioner context cache", e);
@@ -535,9 +536,9 @@ public class LocationCachingService {
         PreparedStatement psPrac =
             c.prepareStatement(
                 "DELETE FROM " + SCHEMA + ".practitioner_context WHERE fetched_at < ?")) {
-      psLoc.setObject(1, cutoff);
+      setInstant(psLoc, 1, cutoff);
       int locDeleted = psLoc.executeUpdate();
-      psPrac.setObject(1, cutoff);
+      setInstant(psPrac, 1, cutoff);
       int pracDeleted = psPrac.executeUpdate();
       if (locDeleted > 0 || pracDeleted > 0) {
         logger.info(
@@ -547,6 +548,15 @@ public class LocationCachingService {
       }
     } catch (SQLException e) {
       logger.warn("Cache TTL cleanup failed (non-fatal)", e);
+    }
+  }
+
+  private static void setInstant(PreparedStatement ps, int parameterIndex, Instant instant)
+      throws SQLException {
+    if (instant == null) {
+      ps.setTimestamp(parameterIndex, null);
+    } else {
+      ps.setTimestamp(parameterIndex, Timestamp.from(instant));
     }
   }
 

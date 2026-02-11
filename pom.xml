@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
-    Copyright 2021-2025 Google LLC
+    Copyright 2021-2026 Google LLC
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -69,6 +69,7 @@
     <slf4j.version>2.0.17</slf4j.version>
     <logback.version>1.5.21</logback.version>
     <license-maven-plugin.version>5.0.0</license-maven-plugin.version>
+    <flyway.version>10.22.0</flyway.version>
   </properties>
 
   <dependencies>

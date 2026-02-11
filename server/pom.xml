@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
-    Copyright 2021-2025 Google LLC
+    Copyright 2021-2026 Google LLC
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -162,6 +162,12 @@
       <groupId>ca.uhn.hapi.fhir</groupId>
       <artifactId>hapi-fhir-storage</artifactId>
       <version>8.6.0</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.hibernate.search</groupId>
+          <artifactId>hibernate-search-backend-elasticsearch</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
 
   </dependencies>

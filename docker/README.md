@@ -40,16 +40,17 @@ location plugin cache.
    docker compose -f docker/hapi-proxy-location-compose.yaml up -d
    ```
 
-   Start order is handled by Compose: Postgres starts first (and is health-checked),
-   then the proxy and HAPI server.
+   Start order is handled by Compose: Postgres starts first (and is
+   health-checked), then the proxy and HAPI server.
 
-For the location plugin to work end-to-end, the Identity Provider (e.g. Keycloak)
-must issue JWTs that include the practitioner claim (e.g. `sub` = Practitioner
-resource ID, as configured in
+For the location plugin to work end-to-end, the Identity Provider (e.g.
+Keycloak) must issue JWTs that include the practitioner claim (e.g. `sub` =
+Practitioner resource ID, as configured in
 [location-access-config.json](../plugins/src/main/resources/location/location-access-config.json)),
-and the FHIR server (HAPI) must have matching Practitioner and Location resources
-with the expected extensions. See the [plugins README](../plugins/README.md) and
-`location-access-config.json` for configuration details.
+and the FHIR server (HAPI) must have matching Practitioner and Location
+resources with the expected extensions. See the
+[plugins README](../plugins/README.md) and `location-access-config.json` for
+configuration details.
 
 ## Pre-loaded HAPI Server
 
@@ -90,9 +91,9 @@ To load this dataset into the HAPI FHIR image, do the following:
    [FHIR Analytics](https://github.com/GoogleCloudPlatform/openmrs-fhir-analytics/tree/master/synthea-hiv)
    repo to upload the files into the HAPI FHIR container. Note instead of
    uploading all patients, you can pick a small subset instead. In that case
-   adjust the `INPUT_DIR` and mount point below accordingly.
-   Using the whole dataset increases the container init time by a few minutes
-   (and slows down e2e tests which depend on this):
+   adjust the `INPUT_DIR` and mount point below accordingly. Using the whole
+   dataset increases the container init time by a few minutes (and slows down
+   e2e tests which depend on this):
 
    ```sh
    docker run -it --network=host \ -e SINK_TYPE="HAPI" \ -e FHIR_ENDPOINT=http://localhost:8080/fhir \ -e INPUT_DIR="/workspace/output/fhir" \ -e CORES="--cores 1" \ -v $(pwd)/fhir:/workspace/output/fhir \ us-docker.pkg.dev/cloud-build-fhir/fhir-analytics/synthea-uploader:latest
