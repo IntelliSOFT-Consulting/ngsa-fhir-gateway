@@ -156,7 +156,8 @@ public final class LocationAccessChecker implements AccessChecker {
           userAssignedLocationId,
           config.getLeafLocationTypeCode(),
           ResourceType.Location,
-          true);
+          true,
+          practitionerId);
     }
 
     // For Location reads/searches at COUNTRY level, allow (no tag enforcement).
@@ -208,7 +209,7 @@ public final class LocationAccessChecker implements AccessChecker {
             .discardQueryParams(List.of("_tag"))
             .additionalQueryParams(Map.of("_tag", tokenValues))
             .build();
-    return LocationTaggingAccessDecision.withSearchMutation(mutation);
+    return LocationTaggingAccessDecision.withSearchMutation(mutation, practitionerId);
   }
 
   private AccessDecision processRead(RequestDetailsReader requestDetails) throws IOException {
@@ -259,8 +260,9 @@ public final class LocationAccessChecker implements AccessChecker {
         userAccessLevelTypeCode,
         userAssignedLocationId,
         config.getLeafLocationTypeCode(),
-        ResourceType.fromCode(requestDetails.getResourceName()),
-        false);
+        safeFromCode(requestDetails.getResourceName()),
+        false,
+        practitionerId);
   }
 
   private AccessDecision processUpdate(RequestDetailsReader requestDetails) throws IOException {
@@ -295,8 +297,9 @@ public final class LocationAccessChecker implements AccessChecker {
         userAccessLevelTypeCode,
         userAssignedLocationId,
         config.getLeafLocationTypeCode(),
-        ResourceType.fromCode(requestDetails.getResourceName()),
-        false);
+        safeFromCode(requestDetails.getResourceName()),
+        false,
+        practitionerId);
   }
 
   private AccessDecision processPatch(RequestDetailsReader requestDetails) throws IOException {
@@ -324,7 +327,6 @@ public final class LocationAccessChecker implements AccessChecker {
       switch (req.getMethod()) {
         case POST:
         case PUT:
-        case PATCH:
           if (!entry.hasResource() || !(entry.getResource() instanceof Resource)) {
             return NoOpAccessDecision.accessDenied();
           }
@@ -342,15 +344,39 @@ public final class LocationAccessChecker implements AccessChecker {
             return NoOpAccessDecision.accessDenied();
           }
           break;
+        case PATCH:
         case GET:
         case DELETE:
-          // Best-effort validation: if resource included, validate tags. Otherwise skip.
-          if (entry.hasResource() && entry.getResource() instanceof Resource) {
-            Resource rr = (Resource) entry.getResource();
-            if (!tagMutator.isAccessibleByTags(
-                rr, userAssignedLocationId, userAccessLevelTypeCode, httpFhirClient, fhirContext)) {
+          // Fetch the existing resource by URL and validate tags.
+          String url = req.getUrl();
+          if (url == null || url.isBlank()) {
+            return NoOpAccessDecision.accessDenied();
+          }
+          // Strip query params for resource fetch.
+          String resourceUrl = url.contains("?") ? url.substring(0, url.indexOf('?')) : url;
+          if (!resourceUrl.contains("/")) {
+            return NoOpAccessDecision.accessDenied();
+          }
+          try {
+            HttpResponse entryResp = httpFhirClient.getResource(resourceUrl);
+            if (entryResp.getStatusLine().getStatusCode() == 404) {
               return NoOpAccessDecision.accessDenied();
             }
+            HttpUtil.validateResponseEntityOrFail(entryResp, resourceUrl);
+            Resource fetched =
+                (Resource)
+                    fhirContext.newJsonParser().parseResource(entryResp.getEntity().getContent());
+            if (!tagMutator.isAccessibleByTags(
+                fetched,
+                userAssignedLocationId,
+                userAccessLevelTypeCode,
+                httpFhirClient,
+                fhirContext)) {
+              return NoOpAccessDecision.accessDenied();
+            }
+          } catch (IOException e) {
+            logger.error("Failed to fetch resource {} for bundle entry validation", resourceUrl, e);
+            return NoOpAccessDecision.accessDenied();
           }
           break;
         default:
@@ -369,7 +395,16 @@ public final class LocationAccessChecker implements AccessChecker {
         userAssignedLocationId,
         config.getLeafLocationTypeCode(),
         ResourceType.Bundle,
-        false);
+        false,
+        practitionerId);
+  }
+
+  private static ResourceType safeFromCode(String code) {
+    try {
+      return ResourceType.fromCode(code);
+    } catch (Exception e) {
+      return null;
+    }
   }
 
   private static String extractPractitionerId(DecodedJWT jwt, LocationAccessConfig config) {

@@ -18,13 +18,11 @@ package com.google.fhir.gateway.plugin.location;
 import ca.uhn.fhir.context.FhirContext;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
-import com.google.common.io.CharStreams;
 import com.google.fhir.gateway.FhirClientFactory;
 import com.google.fhir.gateway.HttpFhirClient;
 import com.google.fhir.gateway.HttpUtil;
 import com.google.fhir.gateway.interfaces.RequestDetailsReader;
 import java.io.IOException;
-import java.io.Reader;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -45,7 +43,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.sql.DataSource;
-import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Location;
@@ -94,7 +91,12 @@ public class LocationCachingService {
     this.ttl = Preconditions.checkNotNull(ttl, "ttl");
     this.clock = Preconditions.checkNotNull(clock, "clock");
     this.syncExecutor =
-        Executors.newSingleThreadExecutor(r -> new Thread(r, "location-cache-sync"));
+        Executors.newSingleThreadExecutor(
+            r -> {
+              Thread t = new Thread(r, "location-cache-sync");
+              t.setDaemon(true);
+              return t;
+            });
     ensureSchemaAndTables();
     deleteStaleRows();
     startNonBlockingFullSync();
@@ -116,6 +118,7 @@ public class LocationCachingService {
             logger.info("Completed Location full sync.");
           } catch (Exception e) {
             logger.error("Location full sync failed; continuing with fetch-through only.", e);
+            syncStarted.set(false);
           }
         });
   }
@@ -253,9 +256,9 @@ public class LocationCachingService {
                     + SCHEMA
                     + ".location l "
                     + "  JOIN d ON l.part_of_id = d.id "
-                    + ") "
+                    + ") CYCLE id SET is_cycle USING cycle_path "
                     + "SELECT id FROM d "
-                    + "WHERE ? = ANY(type_codes) AND fetched_at >= ? "
+                    + "WHERE ? = ANY(type_codes) AND fetched_at >= ? AND NOT is_cycle "
                     + "LIMIT ?")) {
       ps.setString(1, startLocationId);
       ps.setString(2, desiredTypeCode);
@@ -272,19 +275,24 @@ public class LocationCachingService {
     }
   }
 
-  /** Update cache based on successful proxied Location mutation. */
+  /**
+   * Update cache based on successful proxied Location mutation.
+   *
+   * @param request the original request details
+   * @param responseContent the already-read response body (may be null or blank for DELETE)
+   * @param httpFhirClient client for fallback fetches
+   * @param ctx FHIR context for parsing
+   */
   public void handleLocationWritePostProcess(
       RequestDetailsReader request,
-      HttpResponse response,
+      String responseContent,
       HttpFhirClient httpFhirClient,
       FhirContext ctx)
       throws IOException {
     Preconditions.checkNotNull(request, "request");
-    Preconditions.checkNotNull(response, "response");
     Preconditions.checkNotNull(httpFhirClient, "httpFhirClient");
     Preconditions.checkNotNull(ctx, "ctx");
 
-    // DELETE responses may not contain a resource body.
     if (request.getRequestType() == null) {
       return;
     }
@@ -298,8 +306,7 @@ public class LocationCachingService {
       case POST:
       case PUT:
       case PATCH:
-        // Ensure we have a Location resource to upsert.
-        Location loc = parseOrFetchLocation(request, response, httpFhirClient, ctx);
+        Location loc = parseOrFetchLocation(request, responseContent, httpFhirClient, ctx);
         if (loc != null) {
           upsertLocation(loc);
         }
@@ -311,21 +318,16 @@ public class LocationCachingService {
 
   private Location parseOrFetchLocation(
       RequestDetailsReader request,
-      HttpResponse response,
+      String responseContent,
       HttpFhirClient httpFhirClient,
       FhirContext ctx)
       throws IOException {
-    try {
-      if (HttpUtil.isResponseValid(response) && response.getEntity() != null) {
-        HttpEntity entity = response.getEntity();
-        Reader reader = HttpUtil.readerFromEntity(entity);
-        String content = CharStreams.toString(reader);
-        if (!content.isBlank()) {
-          return (Location) ctx.newJsonParser().parseResource(content);
-        }
+    if (responseContent != null && !responseContent.isBlank()) {
+      try {
+        return (Location) ctx.newJsonParser().parseResource(responseContent);
+      } catch (Exception e) {
+        // Fall back to fetch.
       }
-    } catch (Exception e) {
-      // Fall back to fetch.
     }
 
     if (request.getId() == null || request.getId().getIdPart() == null) {
@@ -350,7 +352,8 @@ public class LocationCachingService {
         if (!rs.next()) {
           return null;
         }
-        Instant fetchedAt = rs.getObject(3, Instant.class);
+        Timestamp ts = rs.getTimestamp(3);
+        Instant fetchedAt = ts != null ? ts.toInstant() : null;
         if (fetchedAt == null || fetchedAt.isBefore(cutoff)) {
           return null;
         }
@@ -397,12 +400,13 @@ public class LocationCachingService {
                     + SCHEMA
                     + ".location l "
                     + "  JOIN chain c ON l.id = c.part_of_id "
-                    + ") "
-                    + "SELECT id, type_codes, fetched_at FROM chain")) {
+                    + ") CYCLE id SET is_cycle USING cycle_path "
+                    + "SELECT id, type_codes, fetched_at FROM chain WHERE NOT is_cycle")) {
       ps.setString(1, startLocationId);
       try (ResultSet rs = ps.executeQuery()) {
         while (rs.next()) {
-          Instant fetchedAt = rs.getObject(3, Instant.class);
+          Timestamp ts3 = rs.getTimestamp(3);
+          Instant fetchedAt = ts3 != null ? ts3.toInstant() : null;
           if (fetchedAt == null || fetchedAt.isBefore(cutoff)) {
             // Treat stale rows as missing.
             return Optional.empty();
@@ -458,7 +462,8 @@ public class LocationCachingService {
         if (!rs.next()) {
           return false;
         }
-        Instant fetchedAt = rs.getObject(1, Instant.class);
+        Timestamp ts1 = rs.getTimestamp(1);
+        Instant fetchedAt = ts1 != null ? ts1.toInstant() : null;
         return fetchedAt != null && !fetchedAt.isBefore(cutoff);
       }
     } catch (SQLException e) {
