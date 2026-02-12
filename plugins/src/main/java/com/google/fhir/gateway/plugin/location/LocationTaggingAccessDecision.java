@@ -35,6 +35,7 @@ import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.instance.model.api.IIdType;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Coding;
+import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.Resource;
 import org.hl7.fhir.r4.model.ResourceType;
 import org.slf4j.Logger;
@@ -69,6 +70,7 @@ final class LocationTaggingAccessDecision implements AccessDecision {
   private final ResourceType expectedResourceType;
 
   private final boolean handleLocationCacheUpdates;
+  private final String practitionerId;
 
   private LocationTaggingAccessDecision(
       boolean canAccess,
@@ -82,7 +84,8 @@ final class LocationTaggingAccessDecision implements AccessDecision {
       String userAssignedLocationId,
       String leafLocationTypeCode,
       ResourceType expectedResourceType,
-      boolean handleLocationCacheUpdates) {
+      boolean handleLocationCacheUpdates,
+      String practitionerId) {
     this.canAccess = canAccess;
     this.mutation = mutation;
     this.fhirContext = fhirContext;
@@ -95,21 +98,35 @@ final class LocationTaggingAccessDecision implements AccessDecision {
     this.leafLocationTypeCode = leafLocationTypeCode;
     this.expectedResourceType = expectedResourceType;
     this.handleLocationCacheUpdates = handleLocationCacheUpdates;
+    this.practitionerId = practitionerId;
   }
 
   static LocationTaggingAccessDecision deny() {
     return new LocationTaggingAccessDecision(
-        false, null, null, null, null, null, null, null, null, null, null, false);
+        false, null, null, null, null, null, null, null, null, null, null, false, null);
   }
 
   static LocationTaggingAccessDecision allow() {
     return new LocationTaggingAccessDecision(
-        true, null, null, null, null, null, null, null, null, null, null, false);
+        true, null, null, null, null, null, null, null, null, null, null, false, null);
   }
 
-  static LocationTaggingAccessDecision withSearchMutation(RequestMutation mutation) {
+  static LocationTaggingAccessDecision withSearchMutation(
+      RequestMutation mutation, String practitionerId) {
     return new LocationTaggingAccessDecision(
-        true, mutation, null, null, null, null, null, null, null, null, null, false);
+        true,
+        mutation,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        false,
+        practitionerId);
   }
 
   static LocationTaggingAccessDecision persistTagsForWrite(
@@ -122,7 +139,8 @@ final class LocationTaggingAccessDecision implements AccessDecision {
       String userAssignedLocationId,
       String leafLocationTypeCode,
       ResourceType expectedResourceType,
-      boolean handleLocationCacheUpdates) {
+      boolean handleLocationCacheUpdates,
+      String practitionerId) {
     return new LocationTaggingAccessDecision(
         true,
         null,
@@ -135,7 +153,8 @@ final class LocationTaggingAccessDecision implements AccessDecision {
         userAssignedLocationId,
         leafLocationTypeCode,
         expectedResourceType,
-        handleLocationCacheUpdates);
+        handleLocationCacheUpdates,
+        practitionerId);
   }
 
   @Override
@@ -146,6 +165,14 @@ final class LocationTaggingAccessDecision implements AccessDecision {
   @Override
   public RequestMutation getRequestMutation(RequestDetailsReader requestDetailsReader) {
     return mutation;
+  }
+
+  @Override
+  public Reference getUserWho(RequestDetailsReader request) {
+    if (practitionerId != null) {
+      return new Reference("Practitioner/" + practitionerId);
+    }
+    return AccessDecision.super.getUserWho(request);
   }
 
   @Override
@@ -162,7 +189,7 @@ final class LocationTaggingAccessDecision implements AccessDecision {
     if (content == null || content.isBlank()) {
       // Some operations may return empty bodies (e.g. DELETE). Still allow cache update.
       if (handleLocationCacheUpdates && cache != null) {
-        cache.handleLocationWritePostProcess(request, response, httpFhirClient, fhirContext);
+        cache.handleLocationWritePostProcess(request, content, httpFhirClient, fhirContext);
       }
       return content;
     }
@@ -180,7 +207,7 @@ final class LocationTaggingAccessDecision implements AccessDecision {
     }
 
     if (handleLocationCacheUpdates && cache != null) {
-      cache.handleLocationWritePostProcess(request, response, httpFhirClient, fhirContext);
+      cache.handleLocationWritePostProcess(request, content, httpFhirClient, fhirContext);
     }
 
     // Persist tags for normal resources (best-effort).
@@ -271,15 +298,32 @@ final class LocationTaggingAccessDecision implements AccessDecision {
       return null;
     }
 
-    // If meta or meta.tag doesn't exist, create meta.tag as an array with first element.
-    boolean hasAnyTag = resource.hasMeta() && resource.getMeta().hasTag();
+    boolean hasMeta = resource.hasMeta();
+    boolean hasAnyTag = hasMeta && resource.getMeta().hasTag();
 
     StringBuilder sb = new StringBuilder();
     sb.append("[");
     boolean firstOp = true;
 
-    if (!hasAnyTag) {
-      // Create /meta/tag with an array of codings (only those for our system).
+    if (!hasMeta) {
+      // /meta doesn't exist at all — add the whole meta object.
+      sb.append("{\"op\":\"add\",\"path\":\"/meta\",\"value\":{\"tag\":[");
+      boolean firstVal = true;
+      for (Coding c : missing) {
+        if (!firstVal) {
+          sb.append(",");
+        }
+        sb.append("{\"system\":\"")
+            .append(escapeJson(tagSystem))
+            .append("\",\"code\":\"")
+            .append(escapeJson(c.getCode()))
+            .append("\"}");
+        firstVal = false;
+      }
+      sb.append("]}}");
+      firstOp = false;
+    } else if (!hasAnyTag) {
+      // /meta exists but has no tag array — add the tag array.
       sb.append("{\"op\":\"add\",\"path\":\"/meta/tag\",\"value\":[");
       boolean firstVal = true;
       for (Coding c : missing) {

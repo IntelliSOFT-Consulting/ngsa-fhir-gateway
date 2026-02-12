@@ -41,10 +41,12 @@ public final class LocationAccessCheckerPlugin {
   public static final class Factory implements AccessCheckerFactory {
 
     private final LocationCachingService cachingService;
+    private final LocationAccessConfig config;
 
     @Inject
     public Factory(LocationCachingService cachingService) {
       this.cachingService = cachingService;
+      this.config = LocationAccessConfig.loadDefault();
     }
 
     @Override
@@ -53,7 +55,6 @@ public final class LocationAccessCheckerPlugin {
         HttpFhirClient httpFhirClient,
         FhirContext fhirContext,
         PatientFinder patientFinder) {
-      LocationAccessConfig config = LocationAccessConfig.loadDefault();
       return new LocationAccessChecker(jwt, httpFhirClient, fhirContext, config, cachingService);
     }
   }
